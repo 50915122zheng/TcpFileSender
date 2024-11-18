@@ -7,31 +7,66 @@ TcpFileSender::TcpFileSender(QWidget *parent)
     totalBytes = 0;
     bytesWritten = 0;
     bytesToWrite = 0;
+    // 初始化 UI 组件
+    ipLineEdit = new QLineEdit(this);
+    ipLineEdit->setPlaceholderText("輸入伺服器IP (如: 127.0.0.1)");
+
+    portLineEdit = new QLineEdit(this);
+    portLineEdit->setPlaceholderText("輸入伺服器端口 (如: 16998)");
+    portLineEdit->setValidator(new QIntValidator(1, 65535, this));
+
     clientProgressBar = new QProgressBar;
     clientStatusLabel = new QLabel(QStringLiteral("客戶端就緒"));
     startButton = new QPushButton(QStringLiteral("開始"));
     quitButton = new QPushButton(QStringLiteral("退出"));
     openButton = new QPushButton(QStringLiteral("開檔"));
     startButton->setEnabled(false);
+
     buttonBox = new QDialogButtonBox;
     buttonBox->addButton(startButton, QDialogButtonBox::ActionRole);
     buttonBox->addButton(openButton, QDialogButtonBox::ActionRole);
     buttonBox->addButton(quitButton, QDialogButtonBox::RejectRole);
 
     QVBoxLayout *mainLayout = new QVBoxLayout;
+    mainLayout->addWidget(ipLineEdit);
+    mainLayout->addWidget(portLineEdit);
     mainLayout->addWidget(clientProgressBar);
     mainLayout->addWidget(clientStatusLabel);
     mainLayout->addStretch(1);
     mainLayout->addSpacing(10);
     mainLayout->addWidget(buttonBox);
+
     setLayout(mainLayout);
     setWindowTitle(QStringLiteral("檔案傳送"));
-    connect(openButton,SIGNAL(clicked()), this, SLOT(openFile()));
-    connect(startButton, SIGNAL(clicked()), this, SLOT(start()));
-    connect(&tcpClient, SIGNAL(connected()), this, SLOT(startTransfer()));
-    connect(&tcpClient, SIGNAL(bytesWritten(qint64)), this, SLOT(updateClientProgress(qint64)));
-    connect(quitButton, SIGNAL(clicked()), this, SLOT(close()));
 
+    // 连接信号和槽
+    connect(startButton, &QPushButton::clicked, this, &TcpFileSender::configureConnection);
+    connect(openButton, &QPushButton::clicked, this, &TcpFileSender::openFile);
+    connect(quitButton, &QPushButton::clicked, this, &TcpFileSender::close);
+    connect(&tcpClient, &QTcpSocket::bytesWritten, this, &TcpFileSender::updateClientProgress);
+
+}
+// 动态配置 IP 和端口
+void TcpFileSender::configureConnection()
+{
+    serverIP = ipLineEdit->text();
+    serverPort = portLineEdit->text().toUShort();
+
+    if (serverIP.isEmpty() || serverPort == 0) {
+        QMessageBox::warning(this, QStringLiteral("配置錯誤"), QStringLiteral("請輸入有效的IP地址和端口號！"));
+        return;
+    }
+
+    clientStatusLabel->setText(QStringLiteral("正在連接到 %1:%2...").arg(serverIP).arg(serverPort));
+    tcpClient.connectToHost(serverIP, serverPort);
+
+    if (!tcpClient.waitForConnected(3000)) {
+        QMessageBox::critical(this, QStringLiteral("連接失敗"), tcpClient.errorString());
+        return;
+    }
+
+    clientStatusLabel->setText(QStringLiteral("連接成功，準備傳輸"));
+    startTransfer();
 }
 void TcpFileSender::openFile()
 {
